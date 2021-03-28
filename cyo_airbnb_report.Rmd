@@ -1,0 +1,421 @@
+---
+title: "Singapore Airbnb Analysis Capstone Project"
+author: "KalllN"
+output: 
+  pdf_document:
+    toc: true
+    toc_depth: 2
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+\pagebreak
+
+## Importing Libraries
+```{r libraries_import, warning=FALSE, error=FALSE, message=FALSE}
+if(!require(readr)) install.packages("readr", 
+                                     repos = "http://cran.us.r-project.org")
+if(!require(tidyverse)) install.packages("tidyverse", 
+                                        repos = "http://cran.us.r-project.org")
+if(!require(ggplot2)) install.packages("ggplot2", 
+                                        repos = "http://cran.us.r-project.org")
+if(!require(DataExplorer)) install.packages("DataExplorer", 
+                                        repos = "http://cran.us.r-project.org")
+if(!require(corrplot)) install.packages("corrplot", 
+                                        repos = "http://cran.us.r-project.org")
+if(!require(leaps)) install.packages("leaps", 
+                                        repos = "http://cran.us.r-project.org")
+if(!require(glmnet)) install.packages("glmnet", 
+                                        repos = "http://cran.us.r-project.org")
+if(!require(randomForest)) install.packages("randomForest", 
+                                        repos = "http://cran.us.r-project.org")
+library(readr)
+library(tidyverse)
+library(DataExplorer)
+library(ggplot2)
+library(corrplot)
+library(leaps)
+library(glmnet)
+library(randomForest)
+```
+
+# Step 1: Data Methodology & Analysis
+
+Overview:
+Step 1 - Import and split the raw data into 2 halves: One for training and another for testing.
+
+Step 2 - Exploratory Data Analysis: In this step, a feeling can be established for the available cleaned dataset. A visualization of the data will help us build a better regression model.
+
+Step 3 - Building a Regression Model: In order to build an optimal model, a suitable algorithm and certain features are necessary. 
+Step 4 - Validate Prediction Quality: Different methods can be used to determine how good the model predicts a different set of listings.
+
+## Data Pre-processing
+
+## Importing Dataset
+
+This project focuses on the gleaning patterns and other relevant information about Airbnb listings in Singapore To be more specifically, the goals of this projects are to answer questions such as:
+1. how are rental properties distributed across the neighborhoods of Singapore
+2. how do prices vary with respect neighborhoods, rental property types and rental amenities
+In this section we will take the first look at the loaded data frames. The necessary cleaning and transformations in dataset will be performed so that the data becomes more efficient.
+
+We are using the dataset of February 2020, right before COVID-19 was declared a pandemic. The data is taken from http://insideairbnb.com/get-the-data.html. This site offers a dataset for every country.
+
+```{r data_load, warning=FALSE, error=FALSE, message=FALSE, echo = FALSE}
+airbnb <- read_csv("http://data.insideairbnb.com/singapore/sg/singapore/2020-02-27/visualisations/listings.csv")
+head(airbnb)
+```
+
+Quick glance at the data we have imported:
+1. Over 8000 observations with 16 features
+2. Over 2500 unique hosts offering rentals
+3. The most expensive Airbnb charging $10,000 per night (Singapore dollars)
+\pagebreak
+
+## Summary
+
+We check for any missing values and also create a plot to check how many columns have null values.
+
+```{r summary, warning=FALSE, error=FALSE, message=FALSE}
+summary(airbnb)
+```
+
+## Missing Data plot
+
+```{r missing_data, warning=FALSE, error=FALSE, message=FALSE}
+plot_missing(airbnb)
+```
+
+There are two columns with missing values. We accordingly modify our data.
+
+## Data Modification - NULL values
+
+Since reviews_per_month is a significant feature and used in our models, we modify the data by replacing all null values.
+
+```{r null_replacement, warning=FALSE, error=FALSE, message=FALSE, echo = TRUE}
+airbnb$reviews_per_month <- replace_na(airbnb$reviews_per_month, 0)
+```
+
+## Split Data: Train and Test Sets
+
+Dividing the training data into 80% of our actual data and 20% of test data for modelling, we will use the test dataset in the future for prediction purposes. Objects with price equal to 0 will be omitted since price cannot be 0 (faulty records). In order to remove the outliers, we are filtering the Airbnb data by removing the extreme values of price from both sides (10% from both the end). This will improve our models significantly.
+
+```{r Split_data}
+airbnb_data_model <- airbnb %>% filter(price < quantile(airbnb$price, 0.9) & 
+  price > quantile(airbnb$price, 0.1)) %>% drop_na()
+
+set.seed(1200)
+
+airbnb_data_model <- airbnb_data_model %>% mutate(id = row_number())
+
+#Dividing the data into 80% training data and 20% testing data
+train_set <- airbnb_data_model %>% sample_frac(.8) %>% filter(price > 0)
+test_set  <- anti_join(airbnb_data_model, train_set, by = 'id') %>% filter(price > 0)
+```
+\pagebreak
+
+# Procedure
+
+# Step 2: Exploratory Data Analysis
+
+## Geographic Distribution of Airbnbs in Singapore neighbourhoods
+
+Here, we show a geographical plot of Airbnbs spread across multiple Singapore neighbourhoods. As observed, the dense portion is at central region of Singapore, also called the Beating Heart of Singapore. The frequency of Airbnb reduces on the outskirts of the country. Since, it is easier to stay closer to the attractions this country has to offer, people must prefer spending more to live in the heart of the country than travelling all the way. Central is a well-connected region with a thriving nightlife, plenty of job opportunities and some of Singapore's most exclusive neighbourhoods. 
+
+```{r geographic_distribution1, echo = TRUE}
+airbnb %>% ggplot(aes(x = latitude, y = longitude, color = neighbourhood)) + 
+  geom_point(alpha = 0.3) + theme(legend.position = "none") + labs(x = 'latitude', 
+  y = 'longitude', title = 'Geographic Distribution of Airbnbs: Neighbourhood')
+```
+\pagebreak
+
+## Geographic Distribution of Airbnbs in Singapore neighbourhoods on basis of room types
+
+Considering that most tourists are families and couples, renting private rooms is highly favored. Tourists refrain from renting an entire home/apartment because its expensive and tourists would rather spend money on exploring the country more, which indicates that they will spend very little time at the Airbnbs. College students or single immigrants prefer hiring shared rooms to cut extra and unnecessary costs. The layout of a private room is not much different from that of a hotel room, just cheaper than the rates of a hotel. Thus, there's a higher demand and availability of private rooms in the country.
+
+```{r geographic_distribution2, echo = TRUE}
+airbnb %>% ggplot(aes(x = latitude, y = longitude, color = room_type)) + 
+  geom_point(alpha = 0.3) + labs(x = 'latitude', 
+  y = 'longitude', title = 'Geographic Distribution of Airbnbs: Room Type')
+```
+\pagebreak
+
+## Range of Airbnbs in every neighbourhood
+
+Here we see a bar plot version of the above geographic distribution. Central Region being a densely populated borough constitutes majority of apartment style listings. There is a massive difference between the frequency of Airbnbs in Central Region and Eastern/Western Region. The number of Airbnbs in Central Region are ten to twenty times more than those in the remaining regions. This indicates that very few tourists/students visit the other regions and stick to the popular region only. For travellers and students, Central Region offers multiple restaurants and shops. Primarily, most of Singapore's major expressways wind their way to this region of Singapore. We have 4 types of Airbnbs, the new addition being hotel rooms, majorly used in Central Region as compared to the rest.
+
+```{r airbnb_range, echo = TRUE}
+ggplot(data = airbnb, aes(x = neighbourhood_group)) +
+  geom_bar(position = "dodge", aes(fill = room_type)) + 
+  scale_fill_manual("Room Type", values = c("#e06f69", "aquamarine", "slateblue", "midnightblue")) +
+  labs(x = 'Neighborhood group', y = 'Frequency',
+  title = 'Count of types of Airbnbs in every neighborhood') + theme_minimal()
+```
+\pagebreak
+
+## Geographic Distribution of Airbnbs in Singapore neighbourhoods on basis of price
+
+Most prices are below $5,000 and just a few above located at the heart of the country. Since people prefer Airbnbs over hotels, Airbnbs offer a decent price all over Singapore as seen in the plot below. With the lack of variation in prices, people have the luxury of renting an Airbnb in any neighbourhood. Tourists would rather walk till these top sights than spend more on travelling. Some might also wish to have Airbnbs with nice views from their balconies. Thus, this plot helped us understand that price is not a major factor considering all Airbnbs have similar prices.
+
+```{r geographic_distribution3, echo = TRUE}
+airbnb %>% ggplot(aes(x = latitude, y = longitude, color = price)) + 
+  geom_point(alpha = 0.7) + labs(x = 'latitude', y = 'longitude', 
+  title = 'Geographic Distribution of Airbnbs: Price') + 
+  scale_colour_gradient2(low = "yellow", mid = "orange", high = "red", midpoint = 50)
+```
+\pagebreak
+
+## Number or reviews neighbourhood wise
+
+Users have given around 300 reviews to rentals in the Central Region and East Region of Singapore The Airbnbs with the highest prices have the lowest reviews since it must be rented by wealthy people, most of whom did not give any feedback by writing a review on the website.
+
+```{r airbnb_room_neighbourhood_price, echo = TRUE, warning=FALSE, error=FALSE, message=FALSE}
+ggplot(data = airbnb) + scale_y_log10() + geom_point(aes(x = number_of_reviews,
+          y = price, color = neighbourhood_group)) + theme_minimal()
+```
+\pagebreak
+
+## Availability of Airbnbs yearly
+
+Considering the number of tourists that visit the country every year, a particular Airbnb is available on a average of 200 days per year. Very few of these Airbnbs are available around 300 days a year which might be due to lack of good reviews. Thus, people might choose an Airbnb that's frequently used by many fellow tourists and owns a good rating.
+
+```{r airbnb_availability, echo = TRUE}
+airbnb %>% ggplot(aes(y = availability_365, x = neighbourhood_group)) + 
+  geom_boxplot(aes(fill = room_type)) + geom_hline(yintercept = 
+  mean(airbnb$availability_365), color = "black", linetype = 2, size = 2) +
+  scale_fill_manual("Room Type", values = c("yellow", "red", "#59c6f3", "purple")) +
+  labs(x = 'Neighbourhood group', y = 'Availability/year', 
+       title = 'Availablity of Airbnbs yearly')
+```
+\pagebreak
+
+## Geographic Distribution of Airbnbs in Singapore neighbourhoods on basis of availability
+
+To get a better understanding, we'll see a geographic plot of Singapore which shows availability annually. The aquamarine colored points indicate that these Airbnbs have been used frequently on a yearly basis and are still likely to be used frequently. Some of these could be new rentals that haven't been used as much and thus, have a higher availability.
+
+```{r geographic_distribution4, echo = TRUE}
+airbnb %>% ggplot(aes(x = latitude, y = longitude, color = availability_365)) + 
+  geom_point(alpha = 0.7) + labs(x = 'latitude', y = 'longitude', 
+  title = 'Geographic Distribution of Airbnbs: Availability') + 
+  scale_colour_gradient2(low = "grey", mid = "aquamarine", high = "midnightblue", midpoint = 100)
+```
+\pagebreak
+
+## Correlation of 3 key characteristics
+
+Since availability, number of reviews and calculated_host_listings_count are our key features in this dataset, we created a correlation table.
+
+```{r correlation1, echo = TRUE}
+airbnb_correlation  <- airbnb  %>% 
+  select("availability_365","number_of_reviews", "calculated_host_listings_count")
+cor(airbnb_correlation)
+```
+None of these 3 key features have a strong correlation with each other.
+
+## Correlation of 8 features
+
+Through this correlation matrix, we found that the calculated_host_listings_count is most correlated with availability_365. However, the correlations are not very strong.
+
+```{r correlation2, echo = TRUE}
+airbnb_cor <- airbnb[, sapply(airbnb, is.numeric)]
+airbnb_matrix <- cor(airbnb_cor, method = "pearson")
+corrplot(airbnb_matrix, type="upper", bg = "#7db5b8", tl.col = "black")
+```
+
+## Median Price Plot
+
+Here we explore a plot that shows the median price of all Airbnbs spreads across the neighbourhoods with Western Region soaring the highest ar 10000 Singapore dollars.
+
+```{r median_plot, warning=FALSE, echo = TRUE}
+airbnb_median <- airbnb %>% group_by(neighbourhood) %>% summarize(num_listings = n(),
+    median_price = median(price), long = median(longitude), lat = median(latitude),
+    borough = unique(neighbourhood_group))
+
+airbnb_median %>% ggplot(aes(x = num_listings, y = median_price, col = borough)) +
+  geom_point(alpha = 0.7) + geom_smooth(se = FALSE) + scale_x_log10() + 
+  scale_y_log10() + theme_minimal()
+```
+\pagebreak
+
+# Step 3: Model Building
+
+I experimented with five models to find the most optimal model: first a Linear Regression Model without Reviews, then a Linear Regression Model with Reviews followed by a Log-Linear Regression Model, Subset Regression Model and finally a Random Forest Model. We iterated the variables in the models to increase R-squared, and reduce MAPE when running the models on the test data. We aimed to optimize the models with Subset Regression Model. Before running the data, we excluded the listings with 0 reviews as the price of these might not be tested by the market, i.e. irrelevant for the price estimation.
+
+# Linear Regression Model without reviews
+
+Using this newly cleaned dataset, I instantiated the Liner Regression model, fit it on the training data, and then predicted the price for the test data. Using a linear regression model, we were able to get a R-squared less than 0.5. Since reviews is a key feature in this dataset, I explored two models, firstly, linear regression without reviews and secondly, linear regression with reviews.
+
+```{r lr, echo = TRUE}
+lr_model <- lm(price ~ neighbourhood_group + latitude + longitude + 
+      room_type + minimum_nights + availability_365, data = train_set)
+```
+
+```{r lr_values, echo = FALSE}
+summary_lr_model <- summary(lr_model)
+summary_lr_model
+lr_model_mse <- summary_lr_model$sigma^2
+lr_model_rsquared <- summary_lr_model$r.squared
+lr_model_adj_rsquared <- summary_lr_model$adj.r.squared
+```
+
+## R squared and Adjusted R squared values for LR1
+```{r lr_result, echo = TRUE}
+model_results <- tibble()
+model_results <- tibble(method = "Linear Regression Model", MSE = lr_model_mse, 
+ R_squared = lr_model_rsquared, Adjusted_R_squared = lr_model_adj_rsquared)
+model_results %>% knitr::kable()
+```
+\pagebreak
+
+# Linear Regression Model with reviews
+
+Here, I've added the three missing features from the previous model:
+1. number_of_reviews
+2. reviews_per_month
+3. calculated_host_listings_count
+This model will undoubtedly be better than the first model since its got the three key features that are necessary to distinguish between Airbnbs across Singapore.
+
+```{r lr_reviews, echo = TRUE}
+lr_model_2 <- lm(price ~ neighbourhood_group + latitude + longitude + 
+  reviews_per_month + room_type + minimum_nights  + number_of_reviews +
+  calculated_host_listings_count + availability_365, data = train_set)
+```
+
+```{r lr_reviews_values, echo = FALSE}
+summary_lr_model_2 <- summary(lr_model_2)
+summary_lr_model_2
+lr_model_mse_2 <- summary_lr_model_2$sigma^2
+lr_model_rsquared_2 <- summary_lr_model_2$r.squared
+lr_model_adj_rsquared_2 <- summary_lr_model_2$adj.r.squared
+```
+
+## R squared and Adjusted R squared values for LR2
+```{r lr_reviews_result, echo = TRUE}
+model_results <- bind_rows(model_results, tibble(method = "Linear Regression Model 2", 
+      MSE = lr_model_mse_2, R_squared = lr_model_rsquared_2, 
+      Adjusted_R_squared = lr_model_adj_rsquared_2))
+model_results %>% knitr::kable()
+```
+\pagebreak
+
+# Log Linear Regression Model
+
+The log-linear regression model consistently gave an R-squared between 0.5 and 0.55. Percentage changes in price were driven by the following variables: room_type, neighborhood, reviews, log(calculated_host_listings_count) that is, we assumed that there is a marginally decreasing impact of calculated host listings count.
+
+```{r log_lr, echo = TRUE}
+log_lr <- lm(formula = log(price) ~ room_type + neighbourhood + reviews_per_month + 
+  minimum_nights + number_of_reviews + number_of_reviews +
+    log(calculated_host_listings_count), data = train_set)
+```
+
+```{r log_lr_values, echo = FALSE}
+log_lr_summary <- summary(log_lr)
+log_lr_summary
+log_lr_mse <- log_lr_summary$sigma^2
+log_lr_rsquared <- log_lr_summary$r.squared
+log_lr_adj_rsquared <- log_lr_summary$adj.r.squared
+```
+
+## R squared and Adjusted R squared values for Log LR
+```{r log_lr_result, echo = TRUE}
+model_results <- bind_rows(model_results, tibble(method = "Log-Linear Regression Model", 
+  MSE = log_lr_mse, R_squared = log_lr_rsquared, 
+  Adjusted_R_squared = log_lr_adj_rsquared))
+model_results %>% knitr::kable()
+```
+
+## RMSE Prediction for Log LR model
+```{r final_rmse_1, echo = TRUE}
+predTest_log = predict(log_lr, newdata = test_set)
+RMSE_1 = sqrt(mean((predTest_log - log(test_set$price))^2))
+rmse_results = tibble()
+rmse_results <- tibble(method = "Log Linear Regression Model", RMSE = RMSE_1)
+```
+\pagebreak
+
+# Best Subset Regression Model
+
+Subset regression offers a sequence of models which are the best subset for each size.
+
+```{r regression_model, echo = TRUE}
+regression_model <- regsubsets(price ~ neighbourhood_group + latitude + longitude + 
+  room_type + minimum_nights  + number_of_reviews + reviews_per_month + 
+    calculated_host_listings_count + availability_365, 
+  data = train_set, nbest = 2, nvmax = 9)
+```
+
+```{r regression_model_summary, echo = FALSE}
+summary(regression_model)
+```
+
+```{r regression_model_plot, echo = FALSE}
+plot(regression_model, width = 15)
+```
+
+We made a model based on the plot above and added a new feature to our model - neighbourhood. This model could give us good values required for price predictions. The remaining reviews are same as the previous models since most of them are impactful considering the spread of Airbnbs across Singapore, most of them being in the Central Region.
+```{r subset_model, echo = TRUE}
+subset_model <- lm(price ~ neighbourhood + latitude + longitude + 
+      room_type + minimum_nights  + number_of_reviews + reviews_per_month + 
+      calculated_host_listings_count + availability_365, data = train_set)
+```
+
+```{r subset_model_values, echo = FALSE}
+subset_model_summary <- summary(subset_model)
+subset_model_summary
+subset_model_mse <- subset_model_summary$sigma^2
+subset_model_rsquared <- subset_model_summary$r.squared
+subset_model_adj_rsquared <- subset_model_summary$adj.r.squared
+```
+
+## R squared and Adjusted R squared values for Log LR
+```{r subset_model_result, echo = TRUE}
+model_results <- bind_rows(model_results, tibble(method = "Subset Regression Based Model", 
+MSE = subset_model_mse, R_squared = subset_model_rsquared, 
+Adjusted_R_squared = subset_model_adj_rsquared))
+model_results %>% knitr::kable()
+```
+\pagebreak
+
+
+# Random Forest Model
+
+For further experimentation, I tried creating a Random Forest model. We will use RMSE to estimate how well our random forest was able to predict our test set outcomes for the Singapore Airbnb data and compare it with the RMSE of our log linear regression model.
+
+```{r rf_model, echo = TRUE}
+RFmodel = randomForest(log(price) ~ neighbourhood_group + latitude + longitude + 
+  room_type + minimum_nights  + number_of_reviews + reviews_per_month + 
+    calculated_host_listings_count + availability_365, data = train_set, 
+  nodesize = 20, ntree = 200)
+
+#RMSE Prediction
+predTest = predict(RFmodel, newdata = test_set)
+RMSE_2 = sqrt(mean((predTest - log(test_set$price))^2))
+```
+
+
+## RMSE values for Log Regression and Random Forest Model
+```{r final_rmse, echo = TRUE}
+rmse_results <- bind_rows(rmse_results, tibble(method = "Random Forest Model", 
+        RMSE = RMSE_2))
+rmse_results %>% knitr::kable()
+```
+As the square root of a variance, RMSE can be interpreted as the standard deviation of the unexplained variance, and has the useful property of being in the same units as the response variable. In this case though, the response variable is log-transformed, so the interpretation is not in the original unit, but more like a percentage deviation. Lower values of RMSE indicate better fit. RMSE is a good measure of how accurately the model predicts the response.
+
+# Choosing Optimal Model
+
+A high R squared value means that the deviation of actual points from the fitted points, on average, is small. We prefer a higher adjusted R squared value since none of our models have a big difference between the values of R squared and adjusted R squared. We will rely on Adjusted R squared values to choose our optimal model. The model we created based on Best Subset Regression is most suitable for our prediction with just the right MSE value and R squared value. For our Random Forest model we secured a lower RMSE of 0.303.
+
+
+\pagebreak
+
+# Conclusion
+
+The Airbnb dataset provides us with a fantastic source to better understand Singapore's bustling rental landscape. This data was scraped and manipulated accordingly. Between 2010 and 2014, as more and more people adopted the use of the internet as a service provider, the number of listings doubled every year. Through this exploratory data analysis and visualization project, we gained several interesting insights into the Airbnb rental market.  Central Region was termed the most popular destination. Filled with the hustle and bustle of city life, the Central region of Singapore is the core area for tourists and locals to meet up and enjoy all that the island nation has to offer. Central consists of some of the main attractions of Singapore along with the downtown core which receives a lot of tourist crowds. Central & Western Region have the most expensive rentals compared to the other boroughs. Prices are higher for rentals closer to country hotspots.
+
+Our purpose in this exercise was to be able to predict the price of an accommodation for a night in Singapore through AirBnB. This exercise was meant to entice private owners to list their property on the platform, given our routines ability to predict the price, the listing would sell for.
+
+Due to COVID-19, people would have cut down their trips instantly resulting in higher availability of Airbnbs for a few months.
+
+## Future Scope
+
+We want to expand our analysis to multiple countries and compare patterns and trends among these. From the insights we have derived, we would also like to build predictive models using different features from the dataset. Lastly, we hope to implement the visualizations and techniques used in this project to many other fields and datasets.
