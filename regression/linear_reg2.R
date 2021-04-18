@@ -24,8 +24,7 @@ lr_model_rsquared_2 <- summary_lr_model_2$r.squared
 lr_model_adj_rsquared_2 <- summary_lr_model_2$adj.r.squared
 
 model_results <- bind_rows(model_results, 
-
-tibble(method = "Linear Regression Model 2", 
+            tibble(method = "Linear Regression Model 2", 
       MSE = lr_model_mse_2, 
       R_squared = lr_model_rsquared_2, 
       Adjusted_R_squared = lr_model_adj_rsquared_2))
