@@ -1,4 +1,4 @@
-# Singapore-Airbnb-Feb-2020
+# Singapore Airbnb Price Prediction
 
 Airbnb was founded in 2008 by Brian Chesky, Joe Gebbia, and Nathan Blecharczyk as AirBed & Breakfast, an online marketplace and hospitality service for short-term lodging. Being one of the primary drivers in the emerging concept of smart tourism, Airbnb acts as a broker, gaining commissions from each booking. The rental properties incorporate apartments, homes, boats, and more. Airbnb had a valuation of $35 billion, over 150 million total number of users and over 6 million listings in more than 191,000 cities globally. Airbnb is unique in the sharing economy due to the peer-to-peer interaction between a host and a consumer and the ability for the host to set their own listing price. The major role of Airbnb is then to create and manage the marketplace where hosts can list their properties and guests can discover unique accommodations globally.
 
